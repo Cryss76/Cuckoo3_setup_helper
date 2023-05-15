@@ -1,0 +1,91 @@
+---
+# prerequirements: Ubuntu 20.04 musst be installed and set up with ssh and cuckoo as a user with sudo
+- name: Install and setup Cuckoo
+  hosts: cuckoo3Container
+  
+  tasks:
+  - name: Install needed Packeges
+    become: yes
+    apt:
+      update_cache: yes
+      name: "{{ packages }}"
+      state: latest
+    vars:
+      packages:
+        - build-essential
+        - python3-dev
+        - postgresql
+        - sqlite3
+        - libhyperscan5
+        - libhyperscan-dev
+        - libjpeg8-dev
+        - zlib1g-dev
+        - p7zip-full
+        - rar
+        - unace-nonfree
+        - cabextract
+        - yara
+        - tcpdump
+        - python3-virtualenv
+        - git
+
+  # Start configuring tcpdump
+  - name: Create pcap group to use tcpdump rootless
+    become: yes
+    ansible.builtin.group:
+      name: pcap
+      state: present
+
+  - name: Add cuckoo-user to pcap
+    become: yes
+    user:
+      name: cuckoo
+      groups: pcap
+      append: yes
+
+  - name: Set tcpdump's group to pcap
+    become: yes
+    ansible.builtin.file:
+      path: /usr/sbin/tcpdump
+      group: pcap
+
+  - name: Setcap for tcpdump
+    become: yes
+    community.general.capabilities:
+      path: /usr/sbin/tcpdump
+      capability: cap_net_raw,cap_net_admin=eip
+      state: present
+
+  - name: Dissable tcpdump apparmor profile
+    become: yes
+    ansible.builtin.file:
+      src: /etc/apparmor.d/usr.sbin.tcpdump
+      dest: /etc/apparmor.d/disable/usr.sbin.tcpdump
+      state: link
+
+  - name: Reload apparmor to apply settings
+    become: yes
+    ansible.builtin.systemd:
+      name: apparmor
+      state: reloaded
+  # End tcpdump config
+
+  - name: Create venv
+    command:
+      cmd: virtualenv ~cuckoo/venv-cuckoo3
+      creates: "~cuckoo/venv-cuckoo3"
+
+  - name: Install setuptools version with build_py_2to3
+    pip:
+      virtualenv: ~cuckoo/venv-cuckoo3
+      name: setuptools==58.0.0
+
+  - name: Install pip requirements
+    pip:
+      virtualenv: ~cuckoo/venv-cuckoo3
+      name:
+        - pip
+        - proxmoxer
+        - requests
+      state: latest
+
